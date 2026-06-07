@@ -15,6 +15,8 @@ class CumulativeMetrics:
     sum_weights_per_pos: np.ndarray = field(default_factory=lambda: np.zeros(0))
     sum_weights: float = 0.0
     all_weights: np.ndarray = field(default_factory=lambda: np.zeros(0))
-    sum_weighted_rewards_per_pos: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    sum_weighted_rewards_per_pos: np.ndarray = field(
+        default_factory=lambda: np.zeros(0)
+    )
     all_rewards_per_pos: list = field(default_factory=list)
     all_weights_per_pos: list = field(default_factory=list)
