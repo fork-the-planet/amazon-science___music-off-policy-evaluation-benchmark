@@ -28,13 +28,16 @@ class SelfNormalizedIPM(IPM):
     def update_cumulative_metrics(
         self, cumulative_metrics: CumulativeMetrics, batch: DataBatch
     ):
+        # Reuse all the standard IPS bookkeeping (n, n_matches, all_rewards,
+        # sum_rewards, sum_logging_rewards, n_per_pos, sum_weights_per_pos,
+        # max_k padding).
         super().update_cumulative_metrics(cumulative_metrics, batch)
 
         rewards_batch = self.get_rewards(batch=batch)
         ips_weights_batch = self.compute_ips_weights(batch)
         ips_rewards_batch = rewards_batch * ips_weights_batch
 
-        # Pad the SNIPM-specific per-position accumulator
+        # Pad the SNIPM-specific per-position accumulator if max_k grew.
         if (
             cumulative_metrics.sum_weighted_rewards_per_pos.shape[0]
             < cumulative_metrics.max_k
@@ -49,6 +52,9 @@ class SelfNormalizedIPM(IPM):
             ips_rewards_batch.sum(axis=0)
         )
 
+        # Per-observation per-position arrays for the bootstrap of the
+        # ratio estimator. Stored as variable-length 1D arrays; alignment
+        # to cumulative_metrics.max_k happens in _compute_bootstrap_estimates.
         for i in range(batch.n_rows):
             cumulative_metrics.all_rewards_per_pos.append(ips_rewards_batch[i])
             cumulative_metrics.all_weights_per_pos.append(ips_weights_batch[i])
@@ -57,6 +63,7 @@ class SelfNormalizedIPM(IPM):
     def compute_evaluation_metrics(
         cumulative_metrics: CumulativeMetrics,
     ) -> EvaluationMetrics:
+        # SNIPM: Σⱼ [ Σᵢ wᵢⱼ rᵢⱼ / Σᵢ wᵢⱼ ]
         sn_reward = np.sum(
             np.divide(
                 cumulative_metrics.sum_weighted_rewards_per_pos,
@@ -82,9 +89,13 @@ class SelfNormalizedIPM(IPM):
     def _compute_bootstrap_estimates(
         self, cumulative_metrics: CumulativeMetrics
     ) -> np.ndarray:
+        # Bootstrap the ratio per position: resample observations, recompute
+        # Σᵢ wᵢⱼrᵢⱼ / Σᵢ wᵢⱼ for each position j, then sum over j.
         max_k = cumulative_metrics.max_k
         n = len(cumulative_metrics.all_rewards_per_pos)
 
+        # Align per-observation arrays to a common width; batches may have
+        # had different max_k so the stored 1D arrays can vary in length.
         all_wr = np.zeros((n, max_k))
         all_w = np.zeros((n, max_k))
         for i in range(n):
